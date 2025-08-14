@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>자리배치표</title>
+
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- 천리마체 폰트 -->
+  <link href="https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_one@1.0/Chunlima.woff" rel="stylesheet" as="font" type="font/woff" crossorigin>
+
+  <style>
+    body { background-color: #f8f9fa; font-family: 'Chunlima', sans-serif; }
+    h1 { font-family: 'Chunlima', sans-serif; font-weight: bold; text-align: center; margin-bottom: 20px; }
+    #seat-area {
+      width: 100%;
+      height: 500px;
+      border: 2px dashed #ccc;
+      position: relative;
+      background-color: white;
+      overflow: hidden;
+    }
+    .seat {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #0d6efd, #5a9bfd);
+      color: white;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      cursor: grab;
+      user-select: none;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      text-align: center;
+      padding: 5px;
+      transition: transform 0.2s;
+    }
+    .seat:hover { transform: scale(1.05); }
+    .seat:active { cursor: grabbing; }
+    .seat-number { font-weight: bold; font-size: 14px; }
+    .seat-name { font-size: 12px; }
+  </style>
+</head>
+<body class="p-4">
+
+  <div class="container">
+    <h1>🎓 자리배치표</h1>
+
+    <div class="row mb-3">
+      <div class="col-md-3">
+        <label class="form-label">좌석 수</label>
+        <input type="number" id="seatCount" class="form-control" value="20" min="1">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">이름 목록 (쉼표로 구분)</label>
+        <input type="text" id="nameList" class="form-control" placeholder="예: 철수, 영희, 민수">
+      </div>
+      <div class="col-md-3 d-flex align-items-end">
+        <button id="createSeats" class="btn btn-primary w-100 me-2">좌석 생성</button>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <button id="randomAssign" class="btn btn-success">🎲 랜덤 배정</button>
+    </div>
+
+    <div id="seat-area" class="mb-3"></div>
+  </div>
+
+  <script>
+    const seatArea = document.getElementById('seat-area');
+    let dragTarget = null;
+    let offsetX = 0, offsetY = 0;
+    let seats = [];
+
+    // 좌석 생성 함수 (교실형 배치)
+    function createClassroomLayout(count) {
+      seatArea.innerHTML = '';
+      seats = [];
+      const cols = 5; // 한 줄에 5칸
+      const rows = Math.ceil(count / cols);
+      const gapX = 100;
+      const gapY = 100;
+      let num = 1;
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (num > count) break;
+          const x = 30 + c * gapX;
+          const y = 30 + r * gapY;
+          const seat = createSeat(num, '', x, y);
+          seats.push(seat);
+          num++;
+        }
+      }
+    }
+
+    // 좌석 만들기
+    function createSeat(number, name, x, y) {
+      const seat = document.createElement('div');
+      seat.className = 'seat';
+      seat.style.left = x + 'px';
+      seat.style.top = y + 'px';
+
+      const seatNumber = document.createElement('div');
+      seatNumber.className = 'seat-number';
+      seatNumber.textContent = `#${number}`;
+
+      const seatName = document.createElement('div');
+      seatName.className = 'seat-name';
+      seatName.textContent = name;
+
+      seat.appendChild(seatNumber);
+      seat.appendChild(seatName);
+
+      // 드래그 이벤트
+      seat.addEventListener('mousedown', (e) => {
+        dragTarget = seat;
+        offsetX = e.clientX - seat.offsetLeft;
+        offsetY = e.clientY - seat.offsetTop;
+      });
+
+      seatArea.appendChild(seat);
+      return seat;
+    }
+
+    // 랜덤 배정
+    document.getElementById('randomAssign').addEventListener('click', () => {
+      const names = document.getElementById('nameList').value
+        .split(',')
+        .map(n => n.trim())
+        .filter(n => n.length > 0);
+
+      if (names.length === 0) {
+        alert("이름을 입력하세요!");
+        return;
+      }
+
+      // 랜덤 섞기
+      for (let i = names.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [names[i], names[j]] = [names[j], names[i]];
+      }
+
+      // 좌석에 이름 할당
+      seats.forEach((seat, idx) => {
+        seat.querySelector('.seat-name').textContent = names[idx] || '';
+      });
+    });
+
+    // 새 좌석 생성 버튼
+    document.getElementById('createSeats').addEventListener('click', () => {
+      const count = parseInt(document.getElementById('seatCount').value, 10);
+      createClassroomLayout(count);
+    });
+
+    // 드래그 이동
+    document.addEventListener('mousemove', (e) => {
+      if (dragTarget) {
+        let newX = e.clientX - offsetX;
+        let newY = e.clientY - offsetY;
+
+        const rect = seatArea.getBoundingClientRect();
+        newX = Math.max(0, Math.min(newX, rect.width - dragTarget.offsetWidth));
+        newY = Math.max(0, Math.min(newY, rect.height - dragTarget.offsetHeight));
+
+        dragTarget.style.left = newX + 'px';
+        dragTarget.style.top = newY + 'px';
+      }
+    });
+
+    document.addEventListener('mouseup', () => { dragTarget = null; });
+
+    // 페이지 로드 시 자동 교실형 배치
+    createClassroomLayout(20);
+  </script>
+
+</body>
+</html>
