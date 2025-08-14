@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>자리배치표 · Bootstrap 단일파일</title>
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --stage-bg: #0b1220;
+      --grid-size: 20px;
+      --seat-size: 64px;
+    }
+    body { background:#0a0f1a; color:#e9eef6; }
+    .navbar { background: #0f1728; }
+    .app-container { max-width: 1200px; }
+
+    /* 캔버스(Stage) */
+    .stage-wrap { border:1px solid rgba(255,255,255,.12); border-radius:1rem; background:#0b1220; }
+    .stage { position:relative; overflow:hidden; border-radius:1rem; }
+    .stage.grid-on { 
+      background-image:
+        linear-gradient(transparent calc(100% - 1px), rgba(255,255,255,.06) 1px),
+        linear-gradient(90deg, transparent calc(100% - 1px), rgba(255,255,255,.06) 1px);
+      background-size: var(--grid-size) var(--grid-size);
+      background-color: var(--stage-bg);
+    }
+
+    /* 좌석 */
+    .seat { position:absolute; width:var(--seat-size); height:var(--seat-size); cursor:grab; user-select:none; }
+    .seat:active { cursor:grabbing; }
+    .seat .disc { width:100%; height:100%; border-radius:50%; display:flex; align-items:center; justify-content:center; 
+      background: linear-gradient(180deg, #3bc9a8, #16a085); color:white; font-weight:700; box-shadow:0 8px 20px rgba(0,0,0,.35), inset 0 2px 4px rgba(255,255,255,.15); }
+    .seat.selected .disc { outline: 4px solid rgba(25, 135, 84, .8); }
+    .seat .name { position:absolute; left:50%; transform:translateX(-50%); top:100%; margin-top:.25rem; white-space:nowrap; font-size:.8rem; padding:.15rem .4rem; border-radius:.35rem; background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.12); }
+
+    .panel { background:#0f192d; border:1px solid rgba(255,255,255,.08); border-radius:1rem; }
+    .form-control, .form-select { background:#0c1528; border-color:#27344d; color:#dfe7f5; }
+    .form-control:focus, .form-select:focus { border-color:#66d9a3; box-shadow:0 0 0 .25rem rgba(102,217,163,.15); }
+    .form-range::-webkit-slider-thumb { background:#20c997; }
+    .btn-outline-light { --bs-btn-color:#cfe7ff; --bs-btn-border-color:#466086; }
+    .btn-group .btn { white-space:nowrap; }
+
+    .badge-soft { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); }
+  </style>
+</head>
+<body>
+  <!-- Top Bar -->
+  <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+    <div class="container app-container">
+      <a class="navbar-brand fw-bold" href="#">좌석 배치표</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navContent">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div id="navContent" class="collapse navbar-collapse">
+        <ul class="navbar-nav ms-auto gap-2">
+          <li class="nav-item">
+            <button id="btnExport" class="btn btn-sm btn-outline-light"><i class="bi bi-download me-1"></i>레이아웃 저장</button>
+          </li>
+          <li class="nav-item">
+            <label class="btn btn-sm btn-outline-info mb-0">
+              <i class="bi bi-upload me-1"></i>불러오기
+              <input id="fileImport" type="file" accept="application/json" class="d-none" />
+            </label>
+          </li>
+          <li class="nav-item">
+            <button id="btnCopyAssignments" class="btn btn-sm btn-outline-success"><i class="bi bi-clipboard-check me-1"></i>배정표 복사</button>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container app-container">
+    <div class="row g-4">
+      <!-- 왼쪽 패널 -->
+      <section class="col-lg-4">
+        <div class="panel p-3 mb-4">
+          <h5 class="fw-bold mb-3">이름 목록</h5>
+          <div class="form-text text-light mb-2">한 줄에 한 명씩 입력 (쉼표도 가능)</div>
+          <textarea id="nameText" rows="8" class="form-control" placeholder="예) 철수\n영희\n민수">철수\n영희\n민수\n지영\n도윤\n서연\n하준\n유진\n가온\n다은</textarea>
+          <div class="d-flex flex-wrap gap-2 mt-3">
+            <div class="btn-group">
+              <button id="btnAutoAssign" class="btn btn-success"><i class="bi bi-magic me-1"></i>자동 배정</button>
+              <button id="btnForceAssign" class="btn btn-success"><i class="bi bi-shuffle me-1"></i>강제 배정</button>
+            </div>
+            <button id="btnShuffleAssigned" class="btn btn-warning"><i class="bi bi-arrow-repeat me-1"></i>배정만 섞기</button>
+            <button id="btnClearAssigned" class="btn btn-secondary"><i class="bi bi-eraser me-1"></i>배정 지우기</button>
+          </div>
+        </div>
+
+        <div class="panel p-3 mb-4">
+          <h5 class="fw-bold mb-3">좌석 설정</h5>
+          <div class="row g-3 align-items-center">
+            <div class="col-5"><label class="col-form-label">좌석 수 생성</label></div>
+            <div class="col-7 d-flex gap-2">
+              <input id="seatCount" type="number" min="1" max="200" value="20" class="form-control" />
+              <button id="btnCreateSeats" class="btn btn-primary">생성</button>
+            </div>
+
+            <div class="col-5"><label class="col-form-label">좌석 크기 <span id="seatSizeVal" class="badge rounded-pill badge-soft ms-1">64px</span></label></div>
+            <div class="col-7"><input id="seatSize" type="range" min="36" max="120" value="64" class="form-range"></div>
+
+            <div class="col-5"><label class="col-form-label">스냅 간격 <span id="gridVal" class="badge rounded-pill badge-soft ms-1">20px</span></label></div>
+            <div class="col-7"><input id="gridSize" type="range" min="0" max="100" value="20" class="form-range"></div>
+
+            <div class="col-5"><label class="col-form-label">스냅 사용</label></div>
+            <div class="col-7 form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="snapToggle" checked>
+              <label class="form-check-label" for="snapToggle">ON</label>
+            </div>
+
+            <div class="col-5"><label class="col-form-label">캔버스 크기</label></div>
+            <div class="col-7 d-flex align-items-center gap-2">
+              <input id="canvasW" type="number" class="form-control" value="900" />
+              <span>×</span>
+              <input id="canvasH" type="number" class="form-control" value="540" />
+            </div>
+
+            <div class="col-5"><label class="col-form-label">배경색</label></div>
+            <div class="col-7"><input id="bgColor" type="color" class="form-control form-control-color" value="#0b1220"></div>
+
+            <div class="col-5"><label class="col-form-label">이름 표시</label></div>
+            <div class="col-7 form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="showNames" checked>
+              <label class="form-check-label" for="showNames">ON</label>
+            </div>
+
+            <div class="col-12 d-flex flex-wrap gap-2">
+              <button id="btnAddSeat" class="btn btn-outline-light"><i class="bi bi-plus-circle me-1"></i>좌석 추가</button>
+              <button id="btnDeleteSeat" class="btn btn-outline-danger" disabled><i class="bi bi-trash me-1"></i>선택 삭제</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="selectedPanel" class="panel p-3 d-none">
+          <h5 class="fw-bold mb-3">선택 좌석</h5>
+          <div class="mb-2"><span class="text-secondary">ID:</span> <code id="selId">-</code></div>
+          <div class="row g-2 align-items-center mb-2">
+            <div class="col-4"><label class="col-form-label">라벨</label></div>
+            <div class="col-8"><input id="selLabel" class="form-control"></div>
+          </div>
+          <div class="row g-2 align-items-center">
+            <div class="col-4"><label class="col-form-label">이름 배정</label></div>
+            <div class="col-8"><select id="selName" class="form-select"><option value="">(비어 있음)</option></select></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 우측 캔버스 -->
+      <section class="col-lg-8">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <h4 class="m-0 fw-bold">캔버스</h4>
+          <small class="text-secondary">드래그로 자유 배치 · 방향키 이동(Shift=빠르게)</small>
+        </div>
+        <div class="stage-wrap p-2">
+          <div id="stage" class="stage grid-on" style="width:900px;height:540px"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Toast -->
+  <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080">
+    <div id="toast" class="toast text-bg-dark border-0" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="d-flex">
+        <div id="toastBody" class="toast-body">완료!</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // ===== 상태 =====
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
+    const uid = (() => { let i=0; return () => `${Date.now().toString(36)}_${(i++).toString(36)}`; })();
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const shuffle = (arr) => { const a=[...arr]; for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; };
+
+    const state = {
+      canvasW: 900,
+      canvasH: 540,
+      seatSize: 64,
+      grid: 20,
+      snap: true,
+      bg: '#0b1220',
+      showNames: true,
+      seats: /** @type {{id:string,x:number,y:number,label:string,name?:string}[]} */([]),
+      selectedId: null
+    };
+
+    // ===== UI helper =====
+    function setVar(name, value){ document.documentElement.style.setProperty(name, value); }
+    function toast(msg){ $('#toastBody').textContent = msg; new bootstrap.Toast($('#toast')).show(); }
+
+    // ===== 이름 목록 =====
+    function getNames(){
+      const raw = $('#nameText').value || '';
+      return raw.split(/\n|,/).map(s=>s.trim()).filter(Boolean);
+    }
+    function refreshNameSelect(){
+      const sel = $('#selName');
+      const keep = sel.value;
+      sel.innerHTML = '<option value="">(비어 있음)</option>' + getNames().map(n=>`<option>${n}</option>`).join('');
+      if(keep) sel.value = keep;
+    }
+
+    // ===== 좌석 관리 =====
+    const stage = $('#stage');
+    function renderStage(){
+      stage.innerHTML = '';
+      stage.style.width = state.canvasW + 'px';
+      stage.style.height = state.canvasH + 'px';
+      stage.style.setProperty('--seat-size', state.seatSize + 'px');
+      stage.style.setProperty('--grid-size', state.grid + 'px');
+      stage.classList.toggle('grid-on', true);
+      stage.style.backgroundColor = state.bg;
+
+      state.seats.forEach(seat => {
+        const node = document.createElement('div');
+        node.className = 'seat' + (state.selectedId===seat.id ? ' selected' : '');
+        node.style.left = seat.x + 'px';
+        node.style.top = seat.y + 'px';
+        node.dataset.id = seat.id;
+        node.innerHTML = `
+          <div class="disc">${seat.label}</div>
+          <div class="name">${state.showNames ? (seat.name || '-') : ''}</div>
+        `;
+        enableSeatDrag(node);
+        node.addEventListener('click', ()=> selectSeat(seat.id));
+        stage.appendChild(node);
+      });
+
+      $('#btnDeleteSeat').disabled = !state.selectedId;
+      updateSelectedPanel();
+    }
+
+    function createSeats(count){
+      const cols = Math.max(1, Math.floor(state.canvasW / (state.seatSize + 16)));
+      state.seats = Array.from({length:count}, (_,i)=>{
+        const row = Math.floor(i/cols), col = i % cols;
+        const x = 12 + col * (state.seatSize + 16);
+        const y = 12 + row * (state.seatSize + 16);
+        return { id: uid(), x, y, label: String(i+1), name: undefined };
+      });
+      state.selectedId = null;
+      save();
+      renderStage();
+    }
+
+    function addSeat(){
+      state.seats.push({ id: uid(), x: 24, y: 24, label: String(state.seats.length+1) });
+      save();
+      renderStage();
+    }
+
+    function deleteSelected(){
+      if(!state.selectedId) return;
+      const idx = state.seats.findIndex(s=>s.id===state.selectedId);
+      if(idx>=0){ state.seats.splice(idx,1); }
+      // 라벨 정렬
+      state.seats = state.seats.map((s,i)=> ({...s, label: String(i+1)}));
+      state.selectedId = null;
+      save();
+      renderStage();
+    }
+
+    function selectSeat(id){ state.selectedId = id; renderStage(); }
+
+    // ===== 드래그 =====
+    function enableSeatDrag(node){
+      let startX=0, startY=0, offX=0, offY=0; let moveHandler, upHandler;
+      node.addEventListener('pointerdown', (e)=>{
+        const id = node.dataset.id; selectSeat(id);
+        node.setPointerCapture(e.pointerId);
+        const rect = stage.getBoundingClientRect();
+        const seat = state.seats.find(s=>s.id===id);
+        startX = e.clientX - rect.left; startY = e.clientY - rect.top;
+        offX = startX - seat.x; offY = startY - seat.y;
+        moveHandler = (ev)=>{
+          const r = stage.getBoundingClientRect();
+          let nx = ev.clientX - r.left - offX;
+          let ny = ev.clientY - r.top - offY;
+          if(state.snap && state.grid>0){
+            nx = Math.round(nx/state.grid)*state.grid;
+            ny = Math.round(ny/state.grid)*state.grid;
+          }
+          nx = clamp(nx, 0, state.canvasW - state.seatSize);
+          ny = clamp(ny, 0, state.canvasH - state.seatSize);
+          const s = state.seats.find(s=>s.id===id);
+          s.x = nx; s.y = ny;
+          node.style.left = nx+'px'; node.style.top = ny+'px';
+        };
+        upHandler = ()=>{
+          node.releasePointerCapture(e.pointerId);
+          window.removeEventListener('pointermove', moveHandler);
+          window.removeEventListener('pointerup', upHandler);
+          save();
+        };
+        window.addEventListener('pointermove', moveHandler);
+        window.addEventListener('pointerup', upHandler, { once:true });
+      });
+    }
+
+    // ===== 키보드 이동 =====
+    window.addEventListener('keydown', (e)=>{
+      if(!state.selectedId) return;
+      const step = e.shiftKey ? 10 : 2;
+      if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Delete','Backspace'].includes(e.key)) e.preventDefault();
+      const s = state.seats.find(x=>x.id===state.selectedId);
+      if(!s) return;
+      if(e.key==='ArrowUp') s.y -= step;
+      if(e.key==='ArrowDown') s.y += step;
+      if(e.key==='ArrowLeft') s.x -= step;
+      if(e.key==='ArrowRight') s.x += step;
+      s.x = clamp(s.x, 0, state.canvasW - state.seatSize);
+      s.y = clamp(s.y, 0, state.canvasH - state.seatSize);
+      if(e.key==='Delete' || e.key==='Backspace') return deleteSelected();
+      renderStage(); save();
+    });
+
+    // ===== 선택 패널 =====
+    function updateSelectedPanel(){
+      const wrap = $('#selectedPanel');
+      const seat = state.seats.find(s=>s.id===state.selectedId);
+      if(!seat){ wrap.classList.add('d-none'); return; }
+      wrap.classList.remove('d-none');
+      $('#selId').textContent = seat.id;
+      const $label = $('#selLabel');
+      const $name = $('#selName');
+      $label.value = seat.label;
+      $name.value = seat.name || '';
+    }
+    $('#selLabel').addEventListener('input', (e)=>{
+      const seat = state.seats.find(s=>s.id===state.selectedId); if(!seat) return;
+      seat.label = e.target.value; renderStage(); save();
+    });
+    $('#selName').addEventListener('change', (e)=>{
+      const seat = state.seats.find(s=>s.id===state.selectedId); if(!seat) return;
+      seat.name = e.target.value || undefined; renderStage(); save();
+    });
+
+    // ===== 배정 로직 =====
+    function autoAssign(force=false){
+      if(state.seats.length===0) return;
+      const pool = shuffle(getNames());
+      state.seats.forEach((seat, i)=>{
+        seat.name = pool[i] ?? (force ? pool[i % pool.length] : undefined);
+      });
+      renderStage(); save();
+    }
+    function shuffleAssigned(){
+      const cur = state.seats.map(s=>s.name).filter(Boolean);
+      const mix = shuffle(cur); let k=0;
+      state.seats = state.seats.map(s=> ({...s, name: s.name ? mix[k++] : undefined }));
+      renderStage(); save();
+    }
+    function clearAssigned(){ state.seats.forEach(s=> s.name=undefined); renderStage(); save(); }
+
+    function copyAssignments(){
+      const lines = state.seats.map(s=> `${s.label}. ${s.name ?? '-'}`).join('\n');
+      navigator.clipboard.writeText(lines).then(()=> toast('배정표가 클립보드에 복사되었습니다.'));
+    }
+
+    // ===== 저장/불러오기 & 로컬 스토리지 =====
+    function save(){
+      const payload = JSON.stringify({
+        canvasW: state.canvasW, canvasH: state.canvasH, seatSize: state.seatSize,
+        grid: state.grid, snap: state.snap, bg: state.bg, showNames: state.showNames,
+        seats: state.seats
+      });
+      localStorage.setItem('seating_planner_v1', payload);
+    }
+    function load(){
+      const saved = localStorage.getItem('seating_planner_v1');
+      if(!saved) return;
+      try{
+        const s = JSON.parse(saved);
+        state.canvasW = s.canvasW ?? state.canvasW;
+        state.canvasH = s.canvasH ?? state.canvasH;
+        state.seatSize = s.seatSize ?? state.seatSize;
+        state.grid = s.grid ?? state.grid;
+        state.snap = s.snap ?? state.snap;
+        state.bg = s.bg ?? state.bg;
+        state.showNames = s.showNames ?? state.showNames;
+        state.seats = Array.isArray(s.seats) ? s.seats : state.seats;
+      }catch{}
+    }
+    function exportJSON(){
+      const data = {
+        canvasW: state.canvasW, canvasH: state.canvasH, seatSize: state.seatSize,
+        grid: state.grid, snap: state.snap, bg: state.bg, showNames: state.showNames,
+        seats: state.seats
+      };
+      const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='seating_layout.json'; a.click();
+      URL.revokeObjectURL(url); toast('레이아웃이 저장되었습니다.');
+    }
+    function importJSON(file){
+      const reader = new FileReader();
+      reader.onload = ()=>{ try { const s = JSON.parse(reader.result);
+        state.canvasW = +s.canvasW || state.canvasW;
+        state.canvasH = +s.canvasH || state.canvasH;
+        state.seatSize = +s.seatSize || state.seatSize;
+        state.grid = +s.grid || state.grid;
+        state.snap = !!s.snap; state.bg = s.bg || state.bg; state.showNames = !!s.showNames;
+        state.seats = Array.isArray(s.seats) ? s.seats : state.seats;
+        applyControlsFromState(); renderStage(); save(); toast('불러오기 완료');
+      } catch(err){ toast('JSON 파싱 오류: '+err.message); } };
+      reader.readAsText(file);
+    }
+
+    // ===== 컨트롤 바인딩 =====
+    function applyControlsFromState(){
+      $('#canvasW').value = state.canvasW; $('#canvasH').value = state.canvasH;
+      $('#seatSize').value = state.seatSize; $('#seatSizeVal').textContent = state.seatSize + 'px';
+      $('#gridSize').value = state.grid; $('#gridVal').textContent = state.grid + 'px';
+      $('#snapToggle').checked = state.snap; $('#snapToggle').nextElementSibling.textContent = state.snap? 'ON':'OFF';
+      $('#bgColor').value = state.bg; $('#showNames').checked = state.showNames;
+      stage.style.width = state.canvasW + 'px'; stage.style.height = state.canvasH + 'px';
+      setVar('--seat-size', state.seatSize + 'px'); setVar('--grid-size', state.grid + 'px');
+    }
+
+    // 이벤트 연결
+    $('#btnCreateSeats').addEventListener('click', ()=> createSeats(parseInt($('#seatCount').value||0)));
+    $('#btnAddSeat').addEventListener('click', addSeat);
+    $('#btnDeleteSeat').addEventListener('click', deleteSelected);
+
+    $('#seatSize').addEventListener('input', (e)=>{ state.seatSize = +e.target.value; $('#seatSizeVal').textContent = state.seatSize+'px'; setVar('--seat-size', state.seatSize+'px'); renderStage(); save(); });
+    $('#gridSize').addEventListener('input', (e)=>{ state.grid = +e.target.value; $('#gridVal').textContent = state.grid+'px'; setVar('--grid-size', state.grid+'px'); renderStage(); save(); });
+    $('#snapToggle').addEventListener('change', (e)=>{ state.snap = e.target.checked; e.target.nextElementSibling.textContent = state.snap? 'ON':'OFF'; save(); });
+    $('#bgColor').addEventListener('input', (e)=>{ state.bg = e.target.value; renderStage(); save(); });
+    $('#showNames').addEventListener('change', (e)=>{ state.showNames = e.target.checked; renderStage(); save(); });
+
+    $('#canvasW').addEventListener('input', (e)=>{ state.canvasW = parseInt(e.target.value||0); renderStage(); save(); });
+    $('#canvasH').addEventListener('input', (e)=>{ state.canvasH = parseInt(e.target.value||0); renderStage(); save(); });
+
+    // 이름 관련
+    $('#nameText').addEventListener('input', refreshNameSelect);
+    refreshNameSelect();
+
+    // 배정 버튼들
+    $('#btnAutoAssign').addEventListener('click', ()=> autoAssign(false));
+    $('#btnForceAssign').addEventListener('click', ()=> autoAssign(true));
+    $('#btnShuffleAssigned').addEventListener('click', shuffleAssigned);
+    $('#btnClearAssigned').addEventListener('click', clearAssigned);
+
+    // 내보내기/불러오기/복사
+    $('#btnExport').addEventListener('click', exportJSON);
+    $('#fileImport').addEventListener('change', (e)=>{ if(e.target.files?.[0]) importJSON(e.target.files[0]); });
+    $('#btnCopyAssignments').addEventListener('click', copyAssignments);
+
+    // 초기화
+    load(); applyControlsFromState(); renderStage();
+  </script>
+</body>
+</html>
